@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Себетіңіз — ShopNest</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav class="navbar" id="navbar"></nav>
+
+<div class="container" style="max-width:760px; padding-top: 24px;">
+  <h2 class="section-title" style="margin-top:12px;">Себетіңіз</h2>
+  <div id="cartMsg"></div>
+  <div id="cartItems"></div>
+
+  <div id="cartSummary" style="display:none; margin-top:20px;">
+    <div class="cart-summary">
+      <div class="summary-row summary-total"><span>Барлығы</span><span id="totalAmt"></span></div>
+      <div class="field" style="margin-top:16px;">
+        <label for="custName">Аты-жөніңіз</label>
+        <input type="text" id="custName" placeholder="Атыңызды жазыңыз">
+      </div>
+      <div class="field">
+        <label for="address">Қала және жеткізу мекенжайы</label>
+        <textarea id="address" rows="3" placeholder="Мысалы: Алматы, Абай даңғылы 10"></textarea>
+      </div>
+      <button class="btn btn-primary btn-block" id="checkoutBtn" onclick="sendWhatsApp()">WhatsApp арқылы тапсырыс беру</button>
+      <p style="font-size:12.5px; color:var(--ink-soft); margin:10px 0 0;">Түймені басқанда WhatsApp ашылады, дайын хабарламаны жіберіп қана қойыңыз.</p>
+      <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="clearCart()">Себетті тазалау</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+let waNumber = '';
+fetch('/api/config').then(r => r.json()).then(c => { waNumber = c.whatsapp || ''; }).catch(() => {});
+
+try {
+  const saved = JSON.parse(localStorage.getItem('customer') || '{}');
+  if (saved.name) document.getElementById('custName').value = saved.name;
+  if (saved.address) document.getElementById('address').value = saved.address;
+} catch (e) { /* ignore */ }
+
+function money(n) { return formatPrice(n).replace(/ /g, ' '); }
+
+function loadCart() {
+  const itemsEl = document.getElementById('cartItems');
+  const cart = getCart();
+  renderNavbar();
+  if (cart.length === 0) {
+    itemsEl.innerHTML = `<div class="empty-state">Себетіңіз бос. <br><a href="index.html" class="btn btn-primary" style="margin-top:12px;">Тауарларды қарау</a></div>`;
+    document.getElementById('cartSummary').style.display = 'none';
+    return;
+  }
+
+  itemsEl.innerHTML = cart.map(item => `
+    <div class="cart-row">
+      <img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}">
+      <div class="info">
+        <h4>${escapeHtml(item.name)}</h4>
+        <div style="color:var(--ink-soft); font-size:13px;">${money(item.price)} / дана</div>
+      </div>
+      <div class="qty-control">
+        <button onclick="changeQty(${item.id}, ${item.qty - 1})">−</button>
+        <span>${item.qty}</span>
+        <button onclick="changeQty(${item.id}, ${item.qty + 1})">+</button>
+      </div>
+      <div style="width:90px; text-align:right; font-weight:600;">${money(item.price * item.qty)}</div>
+      <button class="btn btn-outline btn-sm" onclick="removeItem(${item.id})">Жою</button>
+    </div>
+  `).join('');
+
+  const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  document.getElementById('totalAmt').textContent = money(total);
+  document.getElementById('cartSummary').style.display = 'block';
+}
+
+function changeQty(id, newQty) {
+  if (newQty < 1) { removeItem(id); return; }
+  const cart = getCart();
+  const it = cart.find(i => i.id === id);
+  if (!it) return;
+  it.qty = newQty;
+  saveCart(cart);
+  loadCart();
+}
+
+function removeItem(id) {
+  saveCart(getCart().filter(i => i.id !== id));
+  loadCart();
+}
+
+function clearCart() {
+  if (!confirm('Себетті тазалау керек пе?')) return;
+  saveCart([]);
+  loadCart();
+}
+
+function sendWhatsApp() {
+  const msgBox = document.getElementById('cartMsg');
+  const name = document.getElementById('custName').value.trim();
+  const address = document.getElementById('address').value.trim();
+  const cart = getCart();
+
+  if (cart.length === 0) return;
+  if (!name || !address) {
+    msgBox.innerHTML = `<div class="form-msg error">Аты-жөніңізді және жеткізу мекенжайын жазыңыз.</div>`;
+    return;
+  }
+  if (!waNumber) {
+    msgBox.innerHTML = `<div class="form-msg error">WhatsApp нөмірі әлі бапталмаған. Сайт иесіне хабарласыңыз.</div>`;
+    return;
+  }
+  msgBox.innerHTML = '';
+
+  try { localStorage.setItem('customer', JSON.stringify({ name, address })); } catch (e) { /* ignore */ }
+
+  const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const lines = cart.map((i, n) => `${n + 1}. ${i.name} — ${i.qty} × ${money(i.price)} = ${money(i.price * i.qty)}`);
+  const text = [
+    'Сәлеметсіз бе! Тапсырыс бергім келеді:',
+    '',
+    ...lines,
+    '',
+    `Барлығы: ${money(total)}`,
+    '',
+    `Аты-жөні: ${name}`,
+    `Мекенжай: ${address}`
+  ].join('\n');
+
+  window.location.href = 'https://wa.me/' + waNumber + '?text=' + encodeURIComponent(text);
+}
+
+loadCart();
+</script>
+</body>
+</html>
